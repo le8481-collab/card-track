@@ -236,7 +236,7 @@
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut as fbSignOut }
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut as fbSignOut }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
@@ -306,6 +306,11 @@ async function loadAllData() {
 }
 
 // ── Auth ──
+// Handle redirect result (after mobile Google login redirects back)
+getRedirectResult(auth).catch(e => {
+  if (e && e.code !== 'auth/no-current-user') showToast('登入失敗：' + e.message);
+});
+
 onAuthStateChanged(auth, async user => {
   if (user) {
     currentUser = user;
@@ -320,8 +325,13 @@ onAuthStateChanged(auth, async user => {
 });
 
 window.doGoogleLogin = () => {
-  signInWithPopup(auth, new GoogleAuthProvider())
-    .catch(e => showToast('登入失敗：' + e.message));
+  const provider = new GoogleAuthProvider();
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  if (isMobile) {
+    signInWithRedirect(auth, provider);
+  } else {
+    signInWithPopup(auth, provider).catch(e => showToast('登入失敗：' + e.message));
+  }
 };
 window.doSignOut = async () => { closeUserMenu(); await fbSignOut(auth); };
 
