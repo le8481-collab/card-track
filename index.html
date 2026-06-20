@@ -539,7 +539,7 @@ body {
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut as fbSignOut }
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut as fbSignOut, setPersistence, browserLocalPersistence, indexedDBLocalPersistence }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, doc, setDoc, collection, getDocs }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
@@ -575,34 +575,50 @@ function setSyncStatus(s){ const d=$('syncDot'),l=$('syncLabel'); d.className='s
 async function saveKey(key,value){ if(!currentUser)return; setSyncStatus('syncing'); try{ await setDoc(doc(db,'users',currentUser.uid,'data',key),{value}); setSyncStatus('synced'); }catch(e){ setSyncStatus('error'); showToast('儲存失敗：'+e.message); } }
 async function loadAllData(){ if(!currentUser)return; setSyncStatus('loading'); try{ const snap=await getDocs(collection(db,'users',currentUser.uid,'data')); allData={}; snap.forEach(d=>{allData[d.id]=d.data().value;}); setSyncStatus('synced'); }catch(e){ setSyncStatus('error'); showToast('載入失敗：'+e.message); } }
 
-showToast('檢查登入狀態...');
-getRedirectResult(auth).then(result=>{
-  if(result && result.user){ showToast('Redirect 登入成功'); }
-  else{ showToast('無 redirect 結果'); }
-}).catch(e=>{ showToast('Redirect 錯誤：'+(e&&e.code)); });
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-onAuthStateChanged(auth, async user=>{
-  if(user){
-    showToast('已登入：'+user.email);
-    currentUser=user; hide('loginScreen'); show('appScreen'); setupAvatar(user); await loadAllData(); startApp();
-  } else {
-    currentUser=null; show('loginScreen'); hide('appScreen');
+(async () => {
+  try {
+    await setPersistence(auth, indexedDBLocalPersistence);
+  } catch (e) {
+    try { await setPersistence(auth, browserLocalPersistence); } catch (e2) {}
   }
-});
 
-window.doGoogleLogin=()=>{
-  showToast('開始登入...');
-  const p=new GoogleAuthProvider();
-  p.setCustomParameters({ prompt:'select_account' });
-  signInWithPopup(auth,p).then(result=>{
-    showToast('Popup 成功：'+result.user.email);
-  }).catch(e=>{
-    showToast('Popup 失敗：'+e.code);
-    if(e.code==='auth/popup-blocked' || e.code==='auth/operation-not-supported-in-this-environment'){
-      showToast('改用 redirect...');
-      signInWithRedirect(auth,p);
+  try {
+    const result = await getRedirectResult(auth);
+    if (result && result.user) {
+      // user will be picked up by onAuthStateChanged
+    }
+  } catch (e) {
+    if (e && e.code !== 'auth/no-current-user') showToast('登入失敗：' + e.code);
+  }
+
+  onAuthStateChanged(auth, async user => {
+    if (user) {
+      currentUser = user;
+      hide('loginScreen'); show('appScreen');
+      setupAvatar(user);
+      await loadAllData();
+      startApp();
+    } else {
+      currentUser = null;
+      show('loginScreen'); hide('appScreen');
     }
   });
+})();
+
+window.doGoogleLogin = () => {
+  const p = new GoogleAuthProvider();
+  p.setCustomParameters({ prompt: 'select_account' });
+  if (isMobile) {
+    signInWithRedirect(auth, p);
+  } else {
+    signInWithPopup(auth, p).catch(e => {
+      if (e.code !== 'auth/cancelled-popup-request' && e.code !== 'auth/popup-closed-by-user') {
+        showToast('登入失敗：' + e.code);
+      }
+    });
+  }
 };
 window.doSignOut=async()=>{ closeUserMenu(); await fbSignOut(auth); };
 function setupAvatar(u){ $('userMenuName').textContent=u.displayName||u.email; if(u.photoURL)$('avatarBtn').innerHTML=`<img src="${u.photoURL}" alt="">`; else $('avatarInitial').textContent=(u.displayName||u.email||'?')[0].toUpperCase(); }
