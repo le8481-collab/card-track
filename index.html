@@ -562,30 +562,45 @@ let allData={};
 const $    = id => document.getElementById(id);
 const show = id => $(id).classList.remove('hidden');
 const hide = id => $(id).classList.add('hidden');
-window.showToast = msg => { const t=$('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2500); };
+window.showToast = msg => {
+  const t=$('toast');
+  t.textContent=msg;
+  t.classList.add('show');
+  if(t._timer) clearTimeout(t._timer);
+  t._timer = setTimeout(()=>t.classList.remove('show'), 4000);
+  console.log('[toast]', msg);
+};
 function setSyncStatus(s){ const d=$('syncDot'),l=$('syncLabel'); d.className='sync-dot'+(s==='syncing'?' syncing':s==='error'?' error':''); l.textContent=s==='syncing'?'儲存中':s==='synced'?'已同步':s==='loading'?'載入中':'錯誤'; }
 
 async function saveKey(key,value){ if(!currentUser)return; setSyncStatus('syncing'); try{ await setDoc(doc(db,'users',currentUser.uid,'data',key),{value}); setSyncStatus('synced'); }catch(e){ setSyncStatus('error'); showToast('儲存失敗：'+e.message); } }
 async function loadAllData(){ if(!currentUser)return; setSyncStatus('loading'); try{ const snap=await getDocs(collection(db,'users',currentUser.uid,'data')); allData={}; snap.forEach(d=>{allData[d.id]=d.data().value;}); setSyncStatus('synced'); }catch(e){ setSyncStatus('error'); showToast('載入失敗：'+e.message); } }
 
+showToast('檢查登入狀態...');
 getRedirectResult(auth).then(result=>{
-  if(result && result.user){ showToast('登入成功'); }
-}).catch(e=>{ if(e&&e.code!=='auth/no-current-user') showToast('登入失敗：'+e.message); });
+  if(result && result.user){ showToast('Redirect 登入成功'); }
+  else{ showToast('無 redirect 結果'); }
+}).catch(e=>{ showToast('Redirect 錯誤：'+(e&&e.code)); });
 
 onAuthStateChanged(auth, async user=>{
-  if(user){ currentUser=user; hide('loginScreen'); show('appScreen'); setupAvatar(user); await loadAllData(); startApp(); }
-  else{ currentUser=null; show('loginScreen'); hide('appScreen'); }
+  if(user){
+    showToast('已登入：'+user.email);
+    currentUser=user; hide('loginScreen'); show('appScreen'); setupAvatar(user); await loadAllData(); startApp();
+  } else {
+    currentUser=null; show('loginScreen'); hide('appScreen');
+  }
 });
 
 window.doGoogleLogin=()=>{
+  showToast('開始登入...');
   const p=new GoogleAuthProvider();
   p.setCustomParameters({ prompt:'select_account' });
-  signInWithPopup(auth,p).catch(e=>{
-    // Fallback to redirect only if popup is actually blocked
+  signInWithPopup(auth,p).then(result=>{
+    showToast('Popup 成功：'+result.user.email);
+  }).catch(e=>{
+    showToast('Popup 失敗：'+e.code);
     if(e.code==='auth/popup-blocked' || e.code==='auth/operation-not-supported-in-this-environment'){
+      showToast('改用 redirect...');
       signInWithRedirect(auth,p);
-    } else if(e.code!=='auth/cancelled-popup-request' && e.code!=='auth/popup-closed-by-user'){
-      showToast('登入失敗：'+e.code);
     }
   });
 };
